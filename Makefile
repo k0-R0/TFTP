@@ -1,7 +1,7 @@
 #variables
 #compilation flags
 CC := gcc
-CFLAGS := -Wall -Wextra -MMD -MP
+CFLAGS := -Wall -Wextra -MMD -MP -Isrc
 #Directories
 SRC_DIR := src
 BUILD_DIR := build
