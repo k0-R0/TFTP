@@ -26,7 +26,7 @@ Status validate_and_set_ip(char *ipstr, struct in_addr *addr) {
     return SUCCESS;
 }
 
-Status validate_and_set_connection(char *cmd_buffer,
+Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
                                    struct in_addr *server_addr) {
     // validate ip address
     char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
@@ -39,6 +39,12 @@ Status validate_and_set_connection(char *cmd_buffer,
         return FAILURE;
     }
     free(local_cmd_buffer);
+    // connect to server
+    if (sendto(sock_fd, cmd_buffer, strlen(cmd_buffer) + 1, 0,
+               (struct sockaddr *)server_addr, sizeof(*server_addr)) == -1) {
+        ERROR_SERVER_CONNECT();
+        perror(NULL);
+    }
     return SUCCESS;
 }
 Status get_file(char *cmd_buffer, struct sockaddr_in *server_addr) {

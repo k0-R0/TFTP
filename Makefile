@@ -24,9 +24,12 @@ CLIENT_OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(CLIENT_SRCS))
 
 #Required Directories
 REQUIRED_DIRS := $(BIN_DIR) $(OBJ_DIR)/server $(OBJ_DIR)/client $(OBJ_DIR)/commons
-.PHONY : all clean debug
+.PHONY : all clean debug client
 
 all : $(BINS)
+
+client : CFLAGS += -g
+client : $(CLIENT_BIN)
 
 debug : CFLAGS += -g
 debug : all

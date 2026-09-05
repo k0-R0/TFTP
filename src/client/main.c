@@ -7,6 +7,7 @@
 // 4. quit the application and disconnect from the server
 #include "client/client_utils.h"
 #include "commons/commons.h"
+#include "commons/logs.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -31,6 +32,13 @@ Opcode get_operation(const char *cmd_buffer) {
 int main() {
     // display the menu in an infinite loop
     char cmd_buffer[100];
+    // client socket infor
+    int client_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (client_sock < 0) {
+        ERROR_SOCK_CREATE();
+        perror(NULL);
+    }
+    // server address info
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -45,7 +53,7 @@ int main() {
         printf("op code is %d\n", op);
         switch (op) {
         case CONNECT:
-            validate_and_set_connection(cmd_buffer, &server_addr);
+            validate_and_set_connection(cmd_buffer, client_sock, &server_addr);
             break;
         case GET:
             get_file(cmd_buffer, &server_addr);
