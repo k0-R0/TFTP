@@ -9,6 +9,12 @@
 // ack packets for file and command
 // size etc
 // operation mode ENUM
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define SERVER_IP "127.0.0.1"
+#define SERVER_PORT 8080
+
 typedef enum { CONNECT, GET, PUT, QUIT, HELP } Opcode;
 typedef enum { SUCCESS, FAILURE } Status;
 #endif

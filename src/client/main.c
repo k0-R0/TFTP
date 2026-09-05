@@ -9,6 +9,7 @@
 #include "commons/commons.h"
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 
 void print_menu(void) {
     printf("Menu:\n1. connect <server_ip>\n2. get <file_name>\n3. put "
@@ -30,26 +31,30 @@ Opcode get_operation(const char *cmd_buffer) {
 int main() {
     // display the menu in an infinite loop
     char cmd_buffer[100];
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = SERVER_PORT;
     while (1) {
         print_menu();
         fgets(cmd_buffer, 100, stdin);
         cmd_buffer[strcspn(cmd_buffer, "\n")] = '\0';
-        if (strcmp(cmd_buffer, "help"))
+        if (strncmp(cmd_buffer, "help", 4) == 0)
             continue;
         Opcode op = get_operation(cmd_buffer);
-        int server_ip;
+        printf("op code is %d\n", op);
         switch (op) {
         case CONNECT:
-            validate_and_set_connection(cmd_buffer, &server_ip);
+            validate_and_set_connection(cmd_buffer, &server_addr);
             break;
         case GET:
-            get_file(cmd_buffer, &server_ip);
+            get_file(cmd_buffer, &server_addr);
             break;
         case PUT:
-            put_file(cmd_buffer, &server_ip);
+            put_file(cmd_buffer, &server_addr);
             break;
         case QUIT:
-            quit(&server_ip);
+            quit(&server_addr);
             break;
         default:
             break;
