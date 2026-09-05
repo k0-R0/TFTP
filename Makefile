@@ -31,6 +31,9 @@ all : $(BINS)
 client : CFLAGS += -g
 client : $(CLIENT_BIN)
 
+server : CFLAGS += -g
+server : $(SERVER_BIN)
+
 debug : CFLAGS += -g
 debug : all
 

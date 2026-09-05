@@ -27,14 +27,14 @@ Status validate_and_set_ip(char *ipstr, struct in_addr *addr) {
 }
 
 Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
-                                   struct in_addr *server_addr) {
+                                   struct sockaddr_in *server_addr) {
     // validate ip address
     char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
     strcpy(local_cmd_buffer, cmd_buffer);
     char *ipstr = strip_command(local_cmd_buffer);
     // store ip address into buffer
     // convert ipstr to sock_addr_in.s_addr.in_addr
-    if (validate_and_set_ip(ipstr, server_addr) == FAILURE) {
+    if (validate_and_set_ip(ipstr, &server_addr->sin_addr) == FAILURE) {
         ERROR_INVALID_IP(ipstr);
         return FAILURE;
     }

@@ -43,8 +43,8 @@ int main() {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = SERVER_PORT;
+    print_menu();
     while (1) {
-        print_menu();
         fgets(cmd_buffer, 100, stdin);
         cmd_buffer[strcspn(cmd_buffer, "\n")] = '\0';
         if (strncmp(cmd_buffer, "help", 4) == 0)
@@ -65,6 +65,7 @@ int main() {
             quit(&server_addr);
             break;
         default:
+            print_menu();
             break;
         }
     }
