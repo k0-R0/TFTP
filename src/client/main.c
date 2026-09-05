@@ -42,7 +42,7 @@ int main() {
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = SERVER_PORT;
+    server_addr.sin_port = htons(SERVER_PORT);
     print_menu();
     while (1) {
         fgets(cmd_buffer, 100, stdin);
@@ -56,10 +56,10 @@ int main() {
             validate_and_set_connection(cmd_buffer, client_sock, &server_addr);
             break;
         case GET:
-            get_file(cmd_buffer, &server_addr);
+            get_file(cmd_buffer, client_sock, &server_addr);
             break;
         case PUT:
-            put_file(cmd_buffer, &server_addr);
+            put_file(cmd_buffer, client_sock, &server_addr);
             break;
         case QUIT:
             quit(&server_addr);

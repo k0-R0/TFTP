@@ -21,7 +21,7 @@ int main() {
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = SERVER_PORT;
+    server_addr.sin_port = htons(SERVER_PORT);
     if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) == 0) {
         ERROR_INVALID_IP(SERVER_IP);
         perror(NULL);
@@ -33,15 +33,58 @@ int main() {
         perror(NULL);
     }
     // server should never stop
-    // while (1) {
-    // receive the initial packet
-    struct sockaddr_in client_addr;
-    char cmd_buffer[100];
-    socklen_t recv_len = sizeof(client_addr);
-    recvfrom(server_sock, cmd_buffer, 100, 0, (struct sockaddr *)&client_addr,
-             &recv_len);
-    printf("Sender IP : %s\nSender Port : %hu\nData : %s",
-           inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
-           cmd_buffer);
-    // }
+    while (1) {
+        // receive the initial packet
+        struct sockaddr_in client_addr;
+        packet pkt;
+        socklen_t recv_len = sizeof(client_addr);
+        recvfrom(server_sock, &pkt, sizeof(pkt), 0,
+                 (struct sockaddr *)&client_addr, &recv_len);
+        printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
+               inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
+               pkt.data);
+        switch (pkt.opcode) {
+        case CONNECT: {
+            packet ack;
+            ack.opcode = ACK;
+            strcpy(ack.data, "data received successfully");
+            sendto(server_sock, &ack, sizeof(packet), 0,
+                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+            break;
+        }
+        case GET: {
+            packet ack;
+            ack.opcode = ACK;
+            strcpy(ack.data, "GET command received successfully");
+            sendto(server_sock, &ack, sizeof(packet), 0,
+                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+            break;
+        }
+        case PUT: {
+            packet ack;
+            ack.opcode = ACK;
+            strcpy(ack.data, "PUT command received successfully");
+            sendto(server_sock, &ack, sizeof(packet), 0,
+                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+            break;
+        }
+        case MODE: {
+            packet ack;
+            ack.opcode = ACK;
+            strcpy(ack.data, "MODE command received successfully");
+            sendto(server_sock, &ack, sizeof(packet), 0,
+                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+            break;
+        }
+        case QUIT: {
+            packet ack;
+            ack.opcode = ACK;
+            strcpy(ack.data, "QUIT command received successfully");
+            sendto(server_sock, &ack, sizeof(packet), 0,
+                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+            // close or shut down the connection
+            break;
+        }
+        }
+    }
 }

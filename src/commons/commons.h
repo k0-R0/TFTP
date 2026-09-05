@@ -14,7 +14,15 @@
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
+#define DATA_BLOCKSIZE 512
 
-typedef enum { CONNECT, GET, PUT, QUIT, HELP } Opcode;
+typedef enum { CONNECT, GET, PUT, QUIT, ACK, DATA, MODE, HELP } Opcode;
 typedef enum { SUCCESS, FAILURE } Status;
+
+typedef struct {
+    int opcode;
+    int block_num;
+    char data[DATA_BLOCKSIZE];
+} packet;
+
 #endif
