@@ -64,6 +64,22 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
                ack.data);
     return SUCCESS;
 }
+Status send_file_data(int fd, packet *pkt, int sock_fd,
+                      struct sockaddr_in *server_addr) {
+    ssize_t bytes_read;
+    pkt->block_num++;
+    pkt->opcode = DATA;
+    if ((bytes_read = read(fd, pkt->data, sizeof(pkt->data))) < 0) {
+        ERROR_FILE_BLOCK_READ_FAILED(pkt->block_num);
+        return FAILURE;
+    }
+    if (sendto(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)server_addr,
+               sizeof(*server_addr)) == -1) {
+        ERROR_SERVER_CONNECT();
+        return FAILURE;
+    }
+    return SUCCESS;
+}
 Status get_file(char *cmd_buffer, int sock_fd,
                 struct sockaddr_in *server_addr) {
     // set opcode
@@ -122,10 +138,16 @@ Status put_file(char *cmd_buffer, int sock_fd,
         ERROR_ACK_RECV();
         perror(NULL);
     }
-    if (ack.opcode == ACK)
+    if (ack.opcode == ACK) {
         printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
                inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port),
                ack.data);
+        int file_fd = open(files, O_RDONLY);
+        if (send_file_data(file_fd, &pkt, sock_fd, server_addr) == FAILURE) {
+            printf("File send failed");
+            return FAILURE;
+        }
+    }
     // if ack data is error then display error
     // else create a copy of the file and then retrieve data block by block
     return SUCCESS;

@@ -6,7 +6,9 @@
 // 4. disconnect from client and get ready for some other client
 #include "commons/commons.h"
 #include "commons/logs.h"
+#include "server_utils.h"
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -40,13 +42,13 @@ int main() {
         socklen_t recv_len = sizeof(client_addr);
         recvfrom(server_sock, &pkt, sizeof(pkt), 0,
                  (struct sockaddr *)&client_addr, &recv_len);
-        printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-               inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
-               pkt.data);
         switch (pkt.opcode) {
         case CONNECT: {
             packet ack;
             ack.opcode = ACK;
+            printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
+                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
+                   pkt.data);
             strcpy(ack.data, "data received successfully");
             sendto(server_sock, &ack, sizeof(packet), 0,
                    (struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -64,8 +66,21 @@ int main() {
             packet ack;
             ack.opcode = ACK;
             strcpy(ack.data, "PUT command received successfully");
+            printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
+                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
+                   pkt.data);
             sendto(server_sock, &ack, sizeof(packet), 0,
                    (struct sockaddr *)&client_addr, sizeof(client_addr));
+            // get file name
+            char file_name[200];
+            snprintf(file_name, 200, "server_downloads/%s", pkt.data);
+            printf("%s", file_name);
+            int file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (file_fd < 0) {
+                perror(NULL);
+            }
+            // write every byte into that file
+            recv_file_data(file_fd, &pkt, server_sock, &client_addr);
             break;
         }
         case MODE: {
