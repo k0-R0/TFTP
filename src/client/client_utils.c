@@ -63,53 +63,6 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
                inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
     return SUCCESS;
 }
-Status send_file_block(data_packet *pkt, int sock_fd,
-                       struct sockaddr_in *server_addr) {
-    if (sendto(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)server_addr,
-               sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        return FAILURE;
-    }
-    ack_packet ack;
-    if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
-        ERROR_SERVER_CONNECT();
-        return FAILURE;
-    }
-    while (ack.opcode == ACK && ack.ack == 0) {
-        ERROR_SERVER_CONNECT();
-        if (sendto(sock_fd, pkt, sizeof(*pkt), 0,
-                   (struct sockaddr *)server_addr,
-                   sizeof(*server_addr)) == -1) {
-            ERROR_SERVER_CONNECT();
-            return FAILURE;
-        }
-        if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
-            ERROR_SERVER_CONNECT();
-            return FAILURE;
-        }
-    }
-    return SUCCESS;
-}
-
-Status send_file_data(int fd, int sock_fd, struct sockaddr_in *server_addr) {
-    data_packet pkt;
-    memset(&pkt, 0, sizeof(pkt));
-    while (1) {
-        ssize_t bytes_read;
-        pkt.block_num++;
-        pkt.opcode = DATA;
-        if ((bytes_read = read(fd, pkt.data, sizeof(pkt.data))) < 0) {
-            ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
-            return FAILURE;
-        }
-        pkt.data_len = bytes_read;
-        // eof reached
-        if (bytes_read == 0)
-            break;
-        send_file_block(&pkt, sock_fd, server_addr);
-    }
-    return SUCCESS;
-}
 
 Status get_file(char *cmd_buffer, int sock_fd,
                 struct sockaddr_in *server_addr) {
@@ -140,6 +93,17 @@ Status get_file(char *cmd_buffer, int sock_fd,
         printf("Sender IP : %s\nSender Port : %hu\n",
                inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
     // if ack data is error then display error
+
+    char file_name[200];
+    snprintf(file_name, 200, "client_downloads/%s", files);
+    printf("%s", file_name);
+    int file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (file_fd < 0) {
+        perror(NULL);
+    }
+    // write every byte into that file
+    recv_file_data(file_fd, sock_fd, server_addr);
+    close(file_fd);
     // else create a copy of the file and then retrieve data block by block
     return SUCCESS;
 }

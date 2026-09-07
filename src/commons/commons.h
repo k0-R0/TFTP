@@ -39,4 +39,10 @@ typedef struct {
     char data[DATA_BLOCKSIZE];
 } cmd_packet;
 
+Status recv_file_data(int fd, int sock_fd, struct sockaddr_in *client_addr);
+Status recv_file_block(data_packet *pkt, int sock_fd,
+                       struct sockaddr_in *client_addr);
+Status send_file_data(int fd, int sock_fd, struct sockaddr_in *server_addr);
+Status send_file_block(data_packet *pkt, int sock_fd,
+                       struct sockaddr_in *server_addr);
 #endif

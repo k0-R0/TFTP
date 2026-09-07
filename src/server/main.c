@@ -40,8 +40,11 @@ int main() {
         // receive the initial packet
         struct sockaddr_in client_addr;
         socklen_t recv_len = sizeof(client_addr);
-        recvfrom(server_sock, rxBuffer, sizeof(rxBuffer), 0,
-                 (struct sockaddr *)&client_addr, &recv_len);
+        if (recvfrom(server_sock, rxBuffer, sizeof(rxBuffer), 0,
+                     (struct sockaddr *)&client_addr, &recv_len) < 0) {
+            ERROR_SERVER_CONNECT();
+            continue;
+        }
         switch (rxBuffer[0]) {
         case CONNECT: {
             ack_packet ack;
@@ -59,6 +62,19 @@ int main() {
             ack.opcode = ACK;
             sendto(server_sock, &ack, sizeof(ack_packet), 0,
                    (struct sockaddr *)&client_addr, sizeof(client_addr));
+            cmd_packet *pkt = (cmd_packet *)rxBuffer;
+            char files[200];
+            snprintf(files, 200, "server_downloads/%s", pkt->data);
+            int file_fd = open(files, O_RDONLY);
+            if (file_fd < 0) {
+                perror(NULL);
+                break;
+            }
+            if (send_file_data(file_fd, server_sock, &client_addr) == FAILURE) {
+                printf("File send failed");
+                break;
+            }
+            close(file_fd);
             break;
         }
         case PUT: {

@@ -8,6 +8,7 @@
 #include "client/client_utils.h"
 #include "commons/commons.h"
 #include "commons/logs.h"
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -43,6 +44,7 @@ int main() {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SERVER_PORT);
+    inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
     print_menu();
     while (1) {
         fgets(cmd_buffer, 100, stdin);
