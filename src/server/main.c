@@ -79,8 +79,8 @@ int main() {
                 perror(NULL);
             }
             // write every byte into that file
-            data_packet data;
-            recv_file_data(file_fd, &data, server_sock, &client_addr);
+            recv_file_data(file_fd, server_sock, &client_addr);
+            close(file_fd);
             break;
         }
         case MODE: {
