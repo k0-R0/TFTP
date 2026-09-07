@@ -18,14 +18,25 @@
 #define SERVER_PORT 8080
 #define DATA_BLOCKSIZE 512
 
-typedef enum { CONNECT, GET, PUT, QUIT, ACK, DATA, MODE, HELP } Opcode;
+typedef enum { CONNECT, GET, PUT, QUIT, ACK, ERROR, DATA, MODE, HELP } Opcode;
 typedef enum { SUCCESS, FAILURE } Status;
+
+typedef struct {
+    char opcode;
+    int block_num;
+    int data_len;
+    char data[DATA_BLOCKSIZE];
+} data_packet;
 
 typedef struct {
     int opcode;
     int block_num;
-    int data_len;
+    char ack;
+} ack_packet;
+
+typedef struct {
+    int opcode;
     char data[DATA_BLOCKSIZE];
-} packet;
+} cmd_packet;
 
 #endif

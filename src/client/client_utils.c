@@ -39,7 +39,7 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
         ERROR_INVALID_IP(ipstr);
         return FAILURE;
     }
-    packet pkt;
+    cmd_packet pkt;
     pkt.opcode = CONNECT;
     strcpy(pkt.data, ipstr);
     free(local_cmd_buffer);
@@ -50,7 +50,7 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     // check for ack
-    packet ack;
+    ack_packet ack;
     socklen_t len = sizeof(ack);
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                              (struct sockaddr *)server_addr, &len);
@@ -59,12 +59,11 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     if (ack.opcode == ACK)
-        printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port),
-               ack.data);
+        printf("Sender IP : %s\nSender Port : %hu\n",
+               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
     return SUCCESS;
 }
-Status send_file_data(int fd, packet *pkt, int sock_fd,
+Status send_file_data(int fd, data_packet *pkt, int sock_fd,
                       struct sockaddr_in *server_addr) {
     ssize_t bytes_read;
     pkt->block_num++;
@@ -79,12 +78,30 @@ Status send_file_data(int fd, packet *pkt, int sock_fd,
         ERROR_SERVER_CONNECT();
         return FAILURE;
     }
+    ack_packet ack;
+    if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
+        ERROR_SERVER_CONNECT();
+        return FAILURE;
+    }
+    while (ack.opcode == ACK && ack.ack == 0) {
+        ERROR_SERVER_CONNECT();
+        if (sendto(sock_fd, pkt, sizeof(*pkt), 0,
+                   (struct sockaddr *)server_addr,
+                   sizeof(*server_addr)) == -1) {
+            ERROR_SERVER_CONNECT();
+            return FAILURE;
+        }
+        if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
+            ERROR_SERVER_CONNECT();
+            return FAILURE;
+        }
+    }
     return SUCCESS;
 }
 Status get_file(char *cmd_buffer, int sock_fd,
                 struct sockaddr_in *server_addr) {
     // set opcode
-    packet pkt;
+    cmd_packet pkt;
     pkt.opcode = GET;
     // get file names list pass it to data
     char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
@@ -98,7 +115,7 @@ Status get_file(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     // wait for ack
-    packet ack;
+    ack_packet ack;
     socklen_t len = sizeof(ack);
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                              (struct sockaddr *)server_addr, &len);
@@ -107,9 +124,8 @@ Status get_file(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     if (ack.opcode == ACK)
-        printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port),
-               ack.data);
+        printf("Sender IP : %s\nSender Port : %hu\n",
+               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
     // if ack data is error then display error
     // else create a copy of the file and then retrieve data block by block
     return SUCCESS;
@@ -117,7 +133,7 @@ Status get_file(char *cmd_buffer, int sock_fd,
 Status put_file(char *cmd_buffer, int sock_fd,
                 struct sockaddr_in *server_addr) {
     // set opcode
-    packet pkt;
+    cmd_packet pkt;
     pkt.opcode = PUT;
     // get file names list pass it to data
     char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
@@ -131,7 +147,7 @@ Status put_file(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     // wait for ack
-    packet ack;
+    ack_packet ack;
     socklen_t len = sizeof(ack);
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                              (struct sockaddr *)server_addr, &len);
@@ -140,11 +156,12 @@ Status put_file(char *cmd_buffer, int sock_fd,
         perror(NULL);
     }
     if (ack.opcode == ACK) {
-        printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port),
-               ack.data);
+        printf("Sender IP : %s\nSender Port : %hu\n",
+               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
         int file_fd = open(files, O_RDONLY);
-        if (send_file_data(file_fd, &pkt, sock_fd, server_addr) == FAILURE) {
+        data_packet data;
+        memset(&data, 0, sizeof(data));
+        if (send_file_data(file_fd, &data, sock_fd, server_addr) == FAILURE) {
             printf("File send failed");
             return FAILURE;
         }
