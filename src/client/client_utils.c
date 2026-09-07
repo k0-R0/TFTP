@@ -73,6 +73,7 @@ Status send_file_data(int fd, packet *pkt, int sock_fd,
         ERROR_FILE_BLOCK_READ_FAILED(pkt->block_num);
         return FAILURE;
     }
+    pkt->data_len = bytes_read;
     if (sendto(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
         ERROR_SERVER_CONNECT();

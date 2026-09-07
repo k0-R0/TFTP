@@ -12,7 +12,7 @@ Status recv_file_data(int fd, packet *pkt, int sock_fd,
         ERROR_SERVER_CONNECT();
         return FAILURE;
     }
-    if ((bytes_written = write(fd, pkt->data, sizeof(pkt->data))) < 0) {
+    if ((bytes_written = write(fd, pkt->data, pkt->data_len)) < 0) {
         ERROR_FILE_BLOCK_READ_FAILED(pkt->block_num);
         perror(NULL);
         return FAILURE;

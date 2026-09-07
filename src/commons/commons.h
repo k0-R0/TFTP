@@ -24,6 +24,7 @@ typedef enum { SUCCESS, FAILURE } Status;
 typedef struct {
     int opcode;
     int block_num;
+    int data_len;
     char data[DATA_BLOCKSIZE];
 } packet;
 
