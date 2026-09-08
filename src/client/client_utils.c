@@ -50,8 +50,8 @@ Status connect_to_server(char *cmd_buffer, int sock_fd,
     // connect to server
     if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
+        ERROR_CONNECT_SEND(inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+        perror("sendto");
         return FAILURE;
     }
 
@@ -61,8 +61,7 @@ Status connect_to_server(char *cmd_buffer, int sock_fd,
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                              (struct sockaddr *)server_addr, &len);
     if (bytes < 0) {
-        ERROR_ACK_RECV();
-        perror(NULL);
+        ERROR_CONNECT_ACK_RECV();
         return FAILURE;
     }
 
@@ -88,8 +87,8 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
     // Send initial request with all requested files
     if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
+        ERROR_CMD_SEND("GET", inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+        perror("sendto");
         free(local_cmd_buffer);
         return FAILURE;
     }
@@ -107,8 +106,7 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
         ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                                  (struct sockaddr *)server_addr, &len);
         if (bytes < 0) {
-            ERROR_ACK_RECV();
-            perror(NULL);
+            ERROR_CMD_ACK_RECV("GET");
             break;
         }
 
@@ -120,7 +118,7 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
             snprintf(file_path, sizeof(file_path), "client_downloads/%s", ack.message);
             int file_fd = open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (file_fd < 0) {
-                perror(file_path);
+                ERROR_FILE_OPEN(file_path);
                 continue;
             }
 
@@ -157,8 +155,8 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
     // Send initial request with all files to upload
     if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
+        ERROR_CMD_SEND("PUT", inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+        perror("sendto");
         free(local_cmd_buffer);
         return FAILURE;
     }
@@ -176,8 +174,7 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
         ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                                  (struct sockaddr *)server_addr, &len);
         if (bytes < 0) {
-            ERROR_ACK_RECV();
-            perror(NULL);
+            ERROR_CMD_ACK_RECV("PUT");
             break;
         }
 
@@ -187,7 +184,7 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
 
             int file_fd = open(files[i], O_RDONLY);
             if (file_fd < 0) {
-                perror(files[i]);
+                ERROR_FILE_OPEN(files[i]);
                 continue;
             }
 
@@ -227,8 +224,8 @@ Status set_transfer_mode(char *cmd_buffer, int sock_fd, struct sockaddr_in *serv
 
     if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
+        ERROR_CMD_SEND("MODE", inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+        perror("sendto");
         free(local_cmd_buffer);
         return FAILURE;
     }
@@ -238,8 +235,7 @@ Status set_transfer_mode(char *cmd_buffer, int sock_fd, struct sockaddr_in *serv
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
                              (struct sockaddr *)server_addr, &len);
     if (bytes < 0) {
-        ERROR_ACK_RECV();
-        perror(NULL);
+        ERROR_CMD_ACK_RECV("MODE");
         free(local_cmd_buffer);
         return FAILURE;
     }

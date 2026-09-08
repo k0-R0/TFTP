@@ -42,7 +42,7 @@ Status handle_get(FileContext *ctx) {
         snprintf(filepath, sizeof(filepath), "server_downloads/%s", files[i]);
         int file_fd = open(filepath, O_RDONLY);
         if (file_fd < 0) {
-            perror(filepath);
+            ERROR_FILE_OPEN(filepath);
             ack_packet ack;
             memset(&ack, 0, sizeof(ack));
             ack.opcode = ACK;
@@ -99,7 +99,7 @@ Status handle_put(FileContext *ctx) {
         snprintf(filepath, sizeof(filepath), "server_downloads/%s", files[i]);
         int file_fd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (file_fd < 0) {
-            perror(filepath);
+            ERROR_FILE_OPEN(filepath);
             ack_packet ack;
             memset(&ack, 0, sizeof(ack));
             ack.opcode = ACK;

@@ -55,23 +55,23 @@ Status send_file_block(data_packet *pkt, int sock_fd,
                        struct sockaddr_in *server_addr) {
     if (sendto(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
+        ERROR_DATA_BLOCK_SEND(pkt->block_num);
         return FAILURE;
     }
     ack_packet ack;
     if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
-        ERROR_SERVER_CONNECT();
+        ERROR_DATA_ACK_RECV(pkt->block_num);
         return FAILURE;
     }
     while (ack.opcode == ACK && ack.ack == 0) {
         if (sendto(sock_fd, pkt, sizeof(*pkt), 0,
                    (struct sockaddr *)server_addr,
                    sizeof(*server_addr)) == -1) {
-            ERROR_SERVER_CONNECT();
+            ERROR_DATA_BLOCK_SEND(pkt->block_num);
             return FAILURE;
         }
         if (recvfrom(sock_fd, &ack, sizeof(ack), 0, NULL, NULL) == -1) {
-            ERROR_SERVER_CONNECT();
+            ERROR_DATA_ACK_RECV(pkt->block_num);
             return FAILURE;
         }
     }
@@ -111,7 +111,7 @@ Status send_file_data(int fd, FileContext *ctx) {
         } else {
             bytes_read = read(fd, pkt.data, block_size);
             if (bytes_read < 0) {
-                ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
+                ERROR_FILE_BLOCK_READ(pkt.block_num);
                 return FAILURE;
             }
         }
@@ -137,7 +137,7 @@ Status recv_file_block(data_packet *pkt, int sock_fd,
 
     if (recvfrom(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)client_addr,
                  &len) == -1) {
-        ERROR_SERVER_CONNECT();
+        ERROR_DATA_BLOCK_RECV(pkt->block_num);
         ack.block_num = pkt->block_num;
         ack.ack = 0;
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)client_addr,
@@ -159,7 +159,6 @@ Status recv_file_data(int fd, FileContext *ctx) {
 
     while (1) {
         if (recv_file_block(&pkt, ctx->sock_fd, &ctx->dest_addr) == FAILURE) {
-            ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
             return FAILURE;
         }
 
@@ -186,8 +185,8 @@ Status recv_file_data(int fd, FileContext *ctx) {
         }
 
         if (bytes_written < 0) {
-            ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
-            perror(NULL);
+            ERROR_FILE_BLOCK_WRITE(pkt.block_num);
+            perror("write");
             return FAILURE;
         }
 

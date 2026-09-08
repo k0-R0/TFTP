@@ -29,8 +29,8 @@ int main() {
 
     if (bind(server_sock, (struct sockaddr *)&server_addr,
              sizeof(server_addr)) < 0) {
-        ERROR_BIND_FAILED();
-        perror(NULL);
+        ERROR_BIND_FAILED(SERVER_PORT);
+        perror("bind");
         close(server_sock);
         return FAILURE;
     }
@@ -45,7 +45,7 @@ int main() {
         socklen_t recv_len = sizeof(client_addr);
         if (recvfrom(server_sock, rxBuffer, sizeof(rxBuffer), 0,
                      (struct sockaddr *)&client_addr, &recv_len) < 0) {
-            ERROR_SERVER_CONNECT();
+            ERROR_SERVER_LISTENER();
             continue;
         }
 
