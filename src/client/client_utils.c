@@ -1,8 +1,11 @@
+#include "client_utils.h"
 #include "commons/commons.h"
 #include "commons/logs.h"
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 
 static char *strip_command(char *cmd_buffer) {
@@ -16,7 +19,6 @@ static char *strip_command(char *cmd_buffer) {
         prev = cmd_buffer[i];
         i++;
     }
-    printf("%s\n", cmd_buffer + i - 1);
     return cmd_buffer + i - 1; // correcting i that went ahead by a character
 }
 
@@ -27,28 +29,32 @@ Status validate_and_set_ip(char *ipstr, struct in_addr *addr) {
     return SUCCESS;
 }
 
-Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
-                                   struct sockaddr_in *server_addr) {
-    // validate ip address
+Status connect_to_server(char *cmd_buffer, int sock_fd,
+                         struct sockaddr_in *server_addr) {
     char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
     strcpy(local_cmd_buffer, cmd_buffer);
     char *ipstr = strip_command(local_cmd_buffer);
-    // store ip address into buffer
-    // convert ipstr to sock_addr_in.s_addr.in_addr
+
     if (validate_and_set_ip(ipstr, &server_addr->sin_addr) == FAILURE) {
         ERROR_INVALID_IP(ipstr);
+        free(local_cmd_buffer);
         return FAILURE;
     }
+
     cmd_packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
     pkt.opcode = CONNECT;
-    strcpy(pkt.data, ipstr);
+    strncpy(pkt.data, ipstr, sizeof(pkt.data) - 1);
     free(local_cmd_buffer);
+
     // connect to server
     if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
                sizeof(*server_addr)) == -1) {
         ERROR_SERVER_CONNECT();
         perror(NULL);
+        return FAILURE;
     }
+
     // check for ack
     ack_packet ack;
     socklen_t len = sizeof(ack);
@@ -57,93 +63,218 @@ Status validate_and_set_connection(char *cmd_buffer, int sock_fd,
     if (bytes < 0) {
         ERROR_ACK_RECV();
         perror(NULL);
+        return FAILURE;
     }
-    if (ack.opcode == ACK)
-        printf("Sender IP : %s\nSender Port : %hu\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
-    return SUCCESS;
-}
 
-Status get_file(char *cmd_buffer, int sock_fd,
-                struct sockaddr_in *server_addr) {
-    // set opcode
-    cmd_packet pkt;
-    pkt.opcode = GET;
-    // get file names list pass it to data
-    char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
-    strcpy(local_cmd_buffer, cmd_buffer);
-    char *files = strip_command(local_cmd_buffer);
-    strcpy(pkt.data, files);
-    // send packet
-    if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
-               sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
-    }
-    // wait for ack
-    ack_packet ack;
-    socklen_t len = sizeof(ack);
-    ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                             (struct sockaddr *)server_addr, &len);
-    if (bytes < 0) {
-        ERROR_ACK_RECV();
-        perror(NULL);
-    }
-    if (ack.opcode == ACK)
-        printf("Sender IP : %s\nSender Port : %hu\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
-    // if ack data is error then display error
-
-    char file_name[200];
-    snprintf(file_name, 200, "client_downloads/%s", files);
-    printf("%s", file_name);
-    int file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (file_fd < 0) {
-        perror(NULL);
-    }
-    // write every byte into that file
-    recv_file_data(file_fd, sock_fd, server_addr);
-    close(file_fd);
-    // else create a copy of the file and then retrieve data block by block
-    return SUCCESS;
-}
-Status put_file(char *cmd_buffer, int sock_fd,
-                struct sockaddr_in *server_addr) {
-    // set opcode
-    cmd_packet pkt;
-    pkt.opcode = PUT;
-    // get file names list pass it to data
-    char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
-    strcpy(local_cmd_buffer, cmd_buffer);
-    char *files = strip_command(local_cmd_buffer);
-    strcpy(pkt.data, files);
-    // send packet
-    if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
-               sizeof(*server_addr)) == -1) {
-        ERROR_SERVER_CONNECT();
-        perror(NULL);
-    }
-    // wait for ack
-    ack_packet ack;
-    socklen_t len = sizeof(ack);
-    ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                             (struct sockaddr *)server_addr, &len);
-    if (bytes < 0) {
-        ERROR_ACK_RECV();
-        perror(NULL);
-    }
     if (ack.opcode == ACK) {
-        printf("Sender IP : %s\nSender Port : %hu\n",
-               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
-        int file_fd = open(files, O_RDONLY);
-        if (send_file_data(file_fd, sock_fd, server_addr) == FAILURE) {
-            printf("File send failed");
-            return FAILURE;
-        }
-        close(file_fd);
+        printf("Connected to %s:%hu -> %s\n",
+               inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port),
+               ack.message);
     }
-    // if ack data is error then display error
-    // else create a copy of the file and then retrieve data block by block
     return SUCCESS;
 }
-void quit(struct sockaddr_in *server_addr) { return; }
+
+Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_addr,
+                      TransferMode mode) {
+    char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
+    strcpy(local_cmd_buffer, cmd_buffer);
+    char *files_str = strip_command(local_cmd_buffer);
+
+    cmd_packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.opcode = GET;
+    strncpy(pkt.data, files_str, sizeof(pkt.data) - 1);
+
+    // Send initial request with all requested files
+    if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
+               sizeof(*server_addr)) == -1) {
+        ERROR_SERVER_CONNECT();
+        perror(NULL);
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    // Parse the file list to receive each file sequentially
+    char **files = parse_file_list(files_str);
+    if (!files) {
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    for (int i = 0; files[i] != NULL; i++) {
+        ack_packet ack;
+        socklen_t len = sizeof(ack);
+        ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
+                                 (struct sockaddr *)server_addr, &len);
+        if (bytes < 0) {
+            ERROR_ACK_RECV();
+            perror(NULL);
+            break;
+        }
+
+        if (ack.opcode == ACK && ack.ack == 1) {
+            printf("Downloading [%s] from %s:%hu...\n", ack.message,
+                   inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+
+            char file_path[256];
+            snprintf(file_path, sizeof(file_path), "client_downloads/%s", ack.message);
+            int file_fd = open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (file_fd < 0) {
+                perror(file_path);
+                continue;
+            }
+
+            FileContext ctx = {
+                .sock_fd = sock_fd,
+                .dest_addr = *server_addr,
+                .mode = mode
+            };
+
+            recv_file_data(file_fd, &ctx);
+            close(file_fd);
+            printf("Saved to %s successfully.\n", file_path);
+        } else if (ack.opcode == ACK && ack.ack == 0) {
+            printf("Server rejected file [%s]: %s\n", files[i], ack.message);
+        }
+    }
+
+    free_file_list(files);
+    free(local_cmd_buffer);
+    return SUCCESS;
+}
+
+Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_addr,
+                    TransferMode mode) {
+    char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
+    strcpy(local_cmd_buffer, cmd_buffer);
+    char *files_str = strip_command(local_cmd_buffer);
+
+    cmd_packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.opcode = PUT;
+    strncpy(pkt.data, files_str, sizeof(pkt.data) - 1);
+
+    // Send initial request with all files to upload
+    if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
+               sizeof(*server_addr)) == -1) {
+        ERROR_SERVER_CONNECT();
+        perror(NULL);
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    // Parse the file list to send each file sequentially
+    char **files = parse_file_list(files_str);
+    if (!files) {
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    for (int i = 0; files[i] != NULL; i++) {
+        ack_packet ack;
+        socklen_t len = sizeof(ack);
+        ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
+                                 (struct sockaddr *)server_addr, &len);
+        if (bytes < 0) {
+            ERROR_ACK_RECV();
+            perror(NULL);
+            break;
+        }
+
+        if (ack.opcode == ACK && ack.ack == 1) {
+            printf("Uploading [%s] to %s:%hu...\n", ack.message,
+                   inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+
+            int file_fd = open(files[i], O_RDONLY);
+            if (file_fd < 0) {
+                perror(files[i]);
+                continue;
+            }
+
+            FileContext ctx = {
+                .sock_fd = sock_fd,
+                .dest_addr = *server_addr,
+                .mode = mode
+            };
+
+            if (send_file_data(file_fd, &ctx) == FAILURE) {
+                printf("Failed sending file: %s\n", files[i]);
+                close(file_fd);
+                break;
+            }
+            close(file_fd);
+            printf("Uploaded %s successfully.\n", files[i]);
+        } else if (ack.opcode == ACK && ack.ack == 0) {
+            printf("Server rejected file [%s]: %s\n", files[i], ack.message);
+        }
+    }
+
+    free_file_list(files);
+    free(local_cmd_buffer);
+    return SUCCESS;
+}
+
+Status set_transfer_mode(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_addr,
+                         TransferMode *client_mode) {
+    char *local_cmd_buffer = malloc((strlen(cmd_buffer) + 1) * sizeof(char));
+    strcpy(local_cmd_buffer, cmd_buffer);
+    char *mode_str = strip_command(local_cmd_buffer);
+
+    cmd_packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.opcode = MODE;
+    strncpy(pkt.data, mode_str, sizeof(pkt.data) - 1);
+
+    if (sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
+               sizeof(*server_addr)) == -1) {
+        ERROR_SERVER_CONNECT();
+        perror(NULL);
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    ack_packet ack;
+    socklen_t len = sizeof(ack);
+    ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
+                             (struct sockaddr *)server_addr, &len);
+    if (bytes < 0) {
+        ERROR_ACK_RECV();
+        perror(NULL);
+        free(local_cmd_buffer);
+        return FAILURE;
+    }
+
+    if (ack.opcode == ACK && ack.ack == 1) {
+        printf("Server: %s\n", ack.message);
+        if (strcasecmp(mode_str, "byte") == 0) {
+            *client_mode = MODE_BYTE;
+        } else if (strcasecmp(mode_str, "mail") == 0) {
+            *client_mode = MODE_MAIL;
+        } else if (strcasecmp(mode_str, "octet") == 0) {
+            *client_mode = MODE_OCTET;
+        }
+    } else {
+        printf("Mode change failed: %s\n", ack.message);
+    }
+
+    free(local_cmd_buffer);
+    return SUCCESS;
+}
+
+void disconnect_and_quit(int sock_fd, struct sockaddr_in *server_addr) {
+    cmd_packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.opcode = QUIT;
+
+    sendto(sock_fd, &pkt, sizeof(pkt), 0, (struct sockaddr *)server_addr,
+           sizeof(*server_addr));
+
+    ack_packet ack;
+    socklen_t len = sizeof(ack);
+    if (recvfrom(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)server_addr,
+                 &len) > 0) {
+        if (ack.opcode == ACK) {
+            printf("Server: %s\n", ack.message);
+        }
+    }
+}

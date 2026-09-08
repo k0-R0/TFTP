@@ -1,25 +1,21 @@
 // the main function for the server
-// the server will get 4 kinds of requests
-// 1. file request from client
-// 2. get a file to the client
-// 3. change the operation mode
-// 4. disconnect from client and get ready for some other client
 #include "commons/commons.h"
 #include "commons/logs.h"
 #include "server_utils.h"
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 int main() {
-    // set up socket and address of the server
     int server_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (server_sock < 0) {
         ERROR_SOCK_CREATE();
         perror(NULL);
+        return FAILURE;
     }
+
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -27,17 +23,24 @@ int main() {
     if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) == 0) {
         ERROR_INVALID_IP(SERVER_IP);
         perror(NULL);
+        close(server_sock);
+        return FAILURE;
     }
-    // bind the socket to server address
+
     if (bind(server_sock, (struct sockaddr *)&server_addr,
              sizeof(server_addr)) < 0) {
         ERROR_BIND_FAILED();
         perror(NULL);
+        close(server_sock);
+        return FAILURE;
     }
+
+    TransferMode current_mode = MODE_OCTET;
     char rxBuffer[sizeof(data_packet)];
-    // server should never stop
+
+    printf("TFTP Server listening on %s:%d\n", SERVER_IP, SERVER_PORT);
+
     while (1) {
-        // receive the initial packet
         struct sockaddr_in client_addr;
         socklen_t recv_len = sizeof(client_addr);
         if (recvfrom(server_sock, rxBuffer, sizeof(rxBuffer), 0,
@@ -45,75 +48,36 @@ int main() {
             ERROR_SERVER_CONNECT();
             continue;
         }
+
+        FileContext ctx = {
+            .sock_fd = server_sock,
+            .dest_addr = client_addr,
+            .pkt = *(cmd_packet *)rxBuffer,
+            .mode = current_mode
+        };
+
         switch (rxBuffer[0]) {
-        case CONNECT: {
-            ack_packet ack;
-            ack.opcode = ACK;
-            cmd_packet *pkt = (cmd_packet *)rxBuffer;
-            printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
-                   pkt->data);
-            sendto(server_sock, &ack, sizeof(ack_packet), 0,
-                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+        case CONNECT:
+            handle_connect(&ctx);
             break;
-        }
-        case GET: {
-            ack_packet ack;
-            ack.opcode = ACK;
-            sendto(server_sock, &ack, sizeof(ack_packet), 0,
-                   (struct sockaddr *)&client_addr, sizeof(client_addr));
-            cmd_packet *pkt = (cmd_packet *)rxBuffer;
-            char files[200];
-            snprintf(files, 200, "server_downloads/%s", pkt->data);
-            int file_fd = open(files, O_RDONLY);
-            if (file_fd < 0) {
-                perror(NULL);
-                break;
-            }
-            if (send_file_data(file_fd, server_sock, &client_addr) == FAILURE) {
-                printf("File send failed");
-                break;
-            }
-            close(file_fd);
+        case GET:
+            handle_get(&ctx);
             break;
-        }
-        case PUT: {
-            ack_packet ack;
-            ack.opcode = ACK;
-            cmd_packet *pkt = (cmd_packet *)rxBuffer;
-            printf("Sender IP : %s\nSender Port : %hu\nData : %s\n",
-                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port),
-                   pkt->data);
-            sendto(server_sock, &ack, sizeof(ack_packet), 0,
-                   (struct sockaddr *)&client_addr, sizeof(client_addr));
-            // get file name
-            char file_name[200];
-            snprintf(file_name, 200, "server_downloads/%s", pkt->data);
-            printf("%s", file_name);
-            int file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (file_fd < 0) {
-                perror(NULL);
-            }
-            // write every byte into that file
-            recv_file_data(file_fd, server_sock, &client_addr);
-            close(file_fd);
+        case PUT:
+            handle_put(&ctx);
             break;
-        }
-        case MODE: {
-            ack_packet ack;
-            ack.opcode = ACK;
-            sendto(server_sock, &ack, sizeof(ack_packet), 0,
-                   (struct sockaddr *)&client_addr, sizeof(client_addr));
+        case MODE:
+            handle_mode(&ctx, &current_mode);
             break;
-        }
-        case QUIT: {
-            ack_packet ack;
-            ack.opcode = ACK;
-            sendto(server_sock, &ack, sizeof(ack_packet), 0,
-                   (struct sockaddr *)&client_addr, sizeof(client_addr));
-            // close or shut down the connection
+        case QUIT:
+            handle_quit(&ctx);
             break;
-        }
+        default:
+            printf("Unknown opcode received: %d\n", rxBuffer[0]);
+            break;
         }
     }
+
+    close(server_sock);
+    return 0;
 }

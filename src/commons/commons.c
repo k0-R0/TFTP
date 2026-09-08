@@ -1,6 +1,55 @@
 #include "commons.h"
 #include "logs.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+char **parse_file_list(const char *files_str) {
+    if (!files_str || !*files_str)
+        return NULL;
+
+    char *dup = strdup(files_str);
+    if (!dup)
+        return NULL;
+
+    // Count non-empty tokens
+    int count = 0;
+    char *saveptr;
+    char *token = strtok_r(dup, " \t\r\n", &saveptr);
+    while (token) {
+        count++;
+        token = strtok_r(NULL, " \t\r\n", &saveptr);
+    }
+    free(dup);
+
+    if (count == 0)
+        return NULL;
+
+    char **file_list = malloc(sizeof(char *) * (count + 1));
+    if (!file_list)
+        return NULL;
+
+    dup = strdup(files_str);
+    int idx = 0;
+    token = strtok_r(dup, " \t\r\n", &saveptr);
+    while (token) {
+        file_list[idx++] = strdup(token);
+        token = strtok_r(NULL, " \t\r\n", &saveptr);
+    }
+    file_list[idx] = NULL; // Sentinel
+    free(dup);
+
+    return file_list;
+}
+
+void free_file_list(char **files) {
+    if (!files)
+        return;
+    for (int i = 0; files[i] != NULL; i++) {
+        free(files[i]);
+    }
+    free(files);
+}
 
 Status send_file_block(data_packet *pkt, int sock_fd,
                        struct sockaddr_in *server_addr) {
@@ -29,23 +78,50 @@ Status send_file_block(data_packet *pkt, int sock_fd,
     return SUCCESS;
 }
 
-Status send_file_data(int fd, int sock_fd, struct sockaddr_in *server_addr) {
+Status send_file_data(int fd, FileContext *ctx) {
     data_packet pkt;
     memset(&pkt, 0, sizeof(pkt));
+    size_t block_size = (ctx->mode == MODE_BYTE) ? 1 : DATA_BLOCKSIZE;
+
     while (1) {
-        ssize_t bytes_read;
+        ssize_t bytes_read = 0;
         pkt.block_num++;
         pkt.opcode = DATA;
-        if ((bytes_read = read(fd, pkt.data, sizeof(pkt.data))) < 0) {
-            ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
-            return FAILURE;
+
+        if (ctx->mode == MODE_MAIL) {
+            int out_idx = 0;
+            while (out_idx < DATA_BLOCKSIZE) {
+                char ch;
+                ssize_t r = read(fd, &ch, 1);
+                if (r <= 0) {
+                    break;
+                }
+                if (ch == '\n') {
+                    if (out_idx + 2 > DATA_BLOCKSIZE) {
+                        lseek(fd, -1, SEEK_CUR);
+                        break;
+                    }
+                    pkt.data[out_idx++] = '\n';
+                    pkt.data[out_idx++] = '\r';
+                } else {
+                    pkt.data[out_idx++] = ch;
+                }
+            }
+            bytes_read = out_idx;
+        } else {
+            bytes_read = read(fd, pkt.data, block_size);
+            if (bytes_read < 0) {
+                ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
+                return FAILURE;
+            }
         }
+
         pkt.data_len = bytes_read;
-        // eof reached
-        if (send_file_block(&pkt, sock_fd, server_addr) == FAILURE) {
+        if (send_file_block(&pkt, ctx->sock_fd, &ctx->dest_addr) == FAILURE) {
             return FAILURE;
         }
-        if (bytes_read < DATA_BLOCKSIZE)
+
+        if ((size_t)bytes_read < block_size)
             break;
     }
     return SUCCESS;
@@ -57,6 +133,8 @@ Status recv_file_block(data_packet *pkt, int sock_fd,
     ack_packet ack;
     memset(&ack, 0, sizeof(ack));
     ack.opcode = ACK;
+    ack.ack_op = DATA;
+
     if (recvfrom(sock_fd, pkt, sizeof(*pkt), 0, (struct sockaddr *)client_addr,
                  &len) == -1) {
         ERROR_SERVER_CONNECT();
@@ -66,6 +144,7 @@ Status recv_file_block(data_packet *pkt, int sock_fd,
                len);
         return FAILURE;
     }
+
     // send ack for block
     ack.block_num = pkt->block_num;
     ack.ack = 1;
@@ -73,21 +152,46 @@ Status recv_file_block(data_packet *pkt, int sock_fd,
     return SUCCESS;
 }
 
-Status recv_file_data(int fd, int sock_fd, struct sockaddr_in *client_addr) {
+Status recv_file_data(int fd, FileContext *ctx) {
     data_packet pkt;
     memset(&pkt, 0, sizeof(pkt));
+    size_t block_size = (ctx->mode == MODE_BYTE) ? 1 : DATA_BLOCKSIZE;
+
     while (1) {
-        if (recv_file_block(&pkt, sock_fd, client_addr) == FAILURE) {
+        if (recv_file_block(&pkt, ctx->sock_fd, &ctx->dest_addr) == FAILURE) {
             ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
             return FAILURE;
         }
-        ssize_t bytes_written;
-        if ((bytes_written = write(fd, pkt.data, pkt.data_len)) < 0) {
+
+        ssize_t bytes_written = 0;
+        if (ctx->mode == MODE_MAIL) {
+            char clean_buf[DATA_BLOCKSIZE];
+            int write_idx = 0;
+            for (int i = 0; i < pkt.data_len; i++) {
+                if (pkt.data[i] == '\n' && i + 1 < pkt.data_len &&
+                    pkt.data[i + 1] == '\r') {
+                    clean_buf[write_idx++] = '\n';
+                    i++; // skip '\r'
+                } else {
+                    clean_buf[write_idx++] = pkt.data[i];
+                }
+            }
+            if (write_idx > 0) {
+                bytes_written = write(fd, clean_buf, write_idx);
+            }
+        } else {
+            if (pkt.data_len > 0) {
+                bytes_written = write(fd, pkt.data, pkt.data_len);
+            }
+        }
+
+        if (bytes_written < 0) {
             ERROR_FILE_BLOCK_READ_FAILED(pkt.block_num);
             perror(NULL);
             return FAILURE;
         }
-        if (pkt.data_len < DATA_BLOCKSIZE)
+
+        if ((size_t)pkt.data_len < block_size)
             break;
     }
     return SUCCESS;

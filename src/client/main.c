@@ -1,10 +1,4 @@
 // the main function for the client
-//
-// the client will make 4 kinds of requests
-// 1. request a file from the server
-// 2. send a file to the server
-// 3. change the operation mode
-// 4. quit the application and disconnect from the server
 #include "client/client_utils.h"
 #include "commons/commons.h"
 #include "commons/logs.h"
@@ -12,10 +6,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 void print_menu(void) {
-    printf("Menu:\n1. connect <server_ip>\n2. get <file_name>\n3. put "
-           "<file_name>\n4. mode <op>\n5. quit\n");
+    printf("\n==================== TFTP Client Menu ====================\n"
+           "Commands:\n"
+           "  connect <server_ip>      Connect to server (e.g. connect 127.0.0.1)\n"
+           "  get <file1> [file2 ...]  Download file(s) to client_downloads/\n"
+           "  put <file1> [file2 ...]  Upload file(s) to server\n"
+           "  mode <octet|byte|mail>   Set transfer mode:\n"
+           "                             octet: binary in 512-byte blocks (default)\n"
+           "                             byte : single-byte blocks (1 byte/pkt)\n"
+           "                             mail : 512-byte text mode (escapes \\n to \\n\\r)\n"
+           "  help                     Show this menu\n"
+           "  quit                     Disconnect from server and exit\n"
+           "==========================================================\n\n");
 }
 
 Opcode get_operation(const char *cmd_buffer) {
@@ -25,50 +30,68 @@ Opcode get_operation(const char *cmd_buffer) {
         return GET;
     else if (strncmp(cmd_buffer, "put", 3) == 0)
         return PUT;
+    else if (strncmp(cmd_buffer, "mode", 4) == 0)
+        return MODE;
     else if (strncmp(cmd_buffer, "quit", 4) == 0)
         return QUIT;
     return HELP;
 }
 
 int main() {
-    // display the menu in an infinite loop
     char cmd_buffer[100];
-    // client socket infor
     int client_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (client_sock < 0) {
         ERROR_SOCK_CREATE();
         perror(NULL);
+        return FAILURE;
     }
-    // server address info
+
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SERVER_PORT);
     inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
+
+    TransferMode current_mode = MODE_OCTET;
+
     print_menu();
     while (1) {
-        fgets(cmd_buffer, 100, stdin);
+        printf("tftp> ");
+        fflush(stdout);
+        if (!fgets(cmd_buffer, sizeof(cmd_buffer), stdin))
+            break;
         cmd_buffer[strcspn(cmd_buffer, "\n")] = '\0';
-        if (strncmp(cmd_buffer, "help", 4) == 0)
+        if (strlen(cmd_buffer) == 0)
             continue;
+        if (strncmp(cmd_buffer, "help", 4) == 0) {
+            print_menu();
+            continue;
+        }
+
         Opcode op = get_operation(cmd_buffer);
-        printf("op code is %d\n", op);
         switch (op) {
         case CONNECT:
-            validate_and_set_connection(cmd_buffer, client_sock, &server_addr);
+            connect_to_server(cmd_buffer, client_sock, &server_addr);
             break;
         case GET:
-            get_file(cmd_buffer, client_sock, &server_addr);
+            download_files(cmd_buffer, client_sock, &server_addr, current_mode);
             break;
         case PUT:
-            put_file(cmd_buffer, client_sock, &server_addr);
+            upload_files(cmd_buffer, client_sock, &server_addr, current_mode);
+            break;
+        case MODE:
+            set_transfer_mode(cmd_buffer, client_sock, &server_addr, &current_mode);
             break;
         case QUIT:
-            quit(&server_addr);
-            break;
+            disconnect_and_quit(client_sock, &server_addr);
+            close(client_sock);
+            return 0;
         default:
             print_menu();
             break;
         }
     }
+
+    close(client_sock);
+    return 0;
 }
