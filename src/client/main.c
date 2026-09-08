@@ -69,6 +69,7 @@ int main() {
         }
 
         Opcode op = get_operation(cmd_buffer);
+        server_addr.sin_port = htons(SERVER_PORT);
         switch (op) {
         case CONNECT:
             connect_to_server(cmd_buffer, client_sock, &server_addr);

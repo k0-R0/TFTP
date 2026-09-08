@@ -57,9 +57,10 @@ Status connect_to_server(char *cmd_buffer, int sock_fd,
 
     // check for ack
     ack_packet ack;
-    socklen_t len = sizeof(ack);
+    struct sockaddr_in from_addr;
+    socklen_t len = sizeof(from_addr);
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                             (struct sockaddr *)server_addr, &len);
+                             (struct sockaddr *)&from_addr, &len);
     if (bytes < 0) {
         ERROR_CONNECT_ACK_RECV();
         return FAILURE;
@@ -100,11 +101,12 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
         return FAILURE;
     }
 
+    struct sockaddr_in worker_addr = *server_addr;
     for (int i = 0; files[i] != NULL; i++) {
         ack_packet ack;
-        socklen_t len = sizeof(ack);
+        socklen_t len = sizeof(worker_addr);
         ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                                 (struct sockaddr *)server_addr, &len);
+                                 (struct sockaddr *)&worker_addr, &len);
         if (bytes < 0) {
             ERROR_CMD_ACK_RECV("GET");
             break;
@@ -112,7 +114,7 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
 
         if (ack.opcode == ACK && ack.ack == 1) {
             printf("Downloading [%s] from %s:%hu...\n", ack.message,
-                   inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+                   inet_ntoa(worker_addr.sin_addr), ntohs(worker_addr.sin_port));
 
             char file_path[256];
             snprintf(file_path, sizeof(file_path), "client_downloads/%s", ack.message);
@@ -124,7 +126,7 @@ Status download_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_
 
             FileContext ctx = {
                 .sock_fd = sock_fd,
-                .dest_addr = *server_addr,
+                .dest_addr = worker_addr,
                 .mode = mode
             };
 
@@ -168,11 +170,12 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
         return FAILURE;
     }
 
+    struct sockaddr_in worker_addr = *server_addr;
     for (int i = 0; files[i] != NULL; i++) {
         ack_packet ack;
-        socklen_t len = sizeof(ack);
+        socklen_t len = sizeof(worker_addr);
         ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                                 (struct sockaddr *)server_addr, &len);
+                                 (struct sockaddr *)&worker_addr, &len);
         if (bytes < 0) {
             ERROR_CMD_ACK_RECV("PUT");
             break;
@@ -180,7 +183,7 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
 
         if (ack.opcode == ACK && ack.ack == 1) {
             printf("Uploading [%s] to %s:%hu...\n", ack.message,
-                   inet_ntoa(server_addr->sin_addr), ntohs(server_addr->sin_port));
+                   inet_ntoa(worker_addr.sin_addr), ntohs(worker_addr.sin_port));
 
             int file_fd = open(files[i], O_RDONLY);
             if (file_fd < 0) {
@@ -190,7 +193,7 @@ Status upload_files(char *cmd_buffer, int sock_fd, struct sockaddr_in *server_ad
 
             FileContext ctx = {
                 .sock_fd = sock_fd,
-                .dest_addr = *server_addr,
+                .dest_addr = worker_addr,
                 .mode = mode
             };
 
@@ -231,9 +234,10 @@ Status set_transfer_mode(char *cmd_buffer, int sock_fd, struct sockaddr_in *serv
     }
 
     ack_packet ack;
-    socklen_t len = sizeof(ack);
+    struct sockaddr_in from_addr;
+    socklen_t len = sizeof(from_addr);
     ssize_t bytes = recvfrom(sock_fd, &ack, sizeof(ack), 0,
-                             (struct sockaddr *)server_addr, &len);
+                             (struct sockaddr *)&from_addr, &len);
     if (bytes < 0) {
         ERROR_CMD_ACK_RECV("MODE");
         free(local_cmd_buffer);
@@ -266,8 +270,9 @@ void disconnect_and_quit(int sock_fd, struct sockaddr_in *server_addr) {
            sizeof(*server_addr));
 
     ack_packet ack;
-    socklen_t len = sizeof(ack);
-    if (recvfrom(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)server_addr,
+    struct sockaddr_in from_addr;
+    socklen_t len = sizeof(from_addr);
+    if (recvfrom(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&from_addr,
                  &len) > 0) {
         if (ack.opcode == ACK) {
             printf("Server: %s\n", ack.message);
